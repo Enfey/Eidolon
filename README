@@ -1,33 +1,24 @@
-                                        &$x                   +X&            X$&                    
-                                          X;;              +:+x   xX$      +xX                      
-                                +.         +:;          :&;.+X:;:;xX      xxx          +            
-                           $:::;;;;+xXXXX:    :      X :x..   x+X&&&     ;    :X$XXXxx+++:::X       
-                         &&x +:...;+;   ;X$+ ;        :;   :xx$Xx$$       + ;$X;   +xx++++X&+&&     
-                            :  .;   +X$$&$+ +     x         .:  X;+        + ;&&$$X+   ++;;x$       
-                          +  .  :xxX$X$Xxx        :  :       +;  xXx$&      : xXX$XX$Xx:  ;;+$      
-                         :   :xxxxXxx+;;:  &        :X+  x;  ++   Xx        $  ;xxXXxXxxxx; :;X     
-                         &+  xx;..:x;+..     &      $X+  ;      ;X   X$$      &     ;+x:x:..;xx .X&   
-                      $: ++.    +;:. :$$$   +      :       $:  ;  .+X      +   X$$; :+;+.   .++.:$  
-                     : .+.     :;. XX+xX x$:  .+          $.   +.  x+$  X;  :$X xx+xX :;:     .+: : 
-                     :.:       : ++.::+.X$XXX.  .:..   .&;+    ;  ;+;+:+.  XXX$$:+;:.;x :.      :.: 
-                    +..       .::     :+;..:+xX: :+;     :.    x  ;;+x+ :Xx+:..:;.     .:.       ..;
-                    :         :         . .. .;x$$Xx; .;x             .Xx;.  : . .       .         :
-                    ;   x  &    ;   :.:x     $+;+X$$Xx::.   .   x +x::xx;:;      +..   +    ;      :
-                    . ;     : ;                 &X$&&Xxx       ;x +;xX$X                 x :     + .
-                    ;X      $                 X .  &X++x       ; ;;+X&                     $      $;
-                    &       &               ;..    & +;X$      x $XXxX   :  +$                     &
-                                           ::x;+++;  .$:       ; XX$&  :   .:++X                    
-                                           ++XxX$xx   +  :       +: x.  :;;X;XX+&                   
-                                           $&$$&$ +. :x+X.      ;..:  .++:&+x&$                    
-                                                     ;+$  X     ; XX:.;  $$ &                       
-                                                           x    .. xX    $X&;Xx+x$                  
-                                                            X  .  . X;X$Xx:       .xX&              
-                                                             $    : .:                Xx$           
-                                                            x:x          :+xxXxxx;+:   +X           
-                                         &&               XXX;:+      +xX&         ++   x+X         
-                                           x+x+     $XXXxXx    +:     : X           X   +$&         
-                                            ;;;               ;$ ;      .xXX        X   x;          
-                                              X..:          ;      .  :   :;+XxX  X;   :$$          
-                                                  &X+;;x&           &         .:.    : ;            
-                                                                       :             ;X             
-                                                                         +:..  .. :;x               
+Eidolon is a C++ tool built on top of MLIR/LLVM that is capable of verifying instances of lowered MLIR.
+
+Eidolon is desirable when you must ensure that an instance of lowered MLIR refines the semantics of the source it was lowered from. Given an MLIR input, it lowers a copy with MLIR's own pass and verifies that the lowering refines the source.
+
+As a proof of concept, Eidolon aims to support the warp-collective operations in the gpu dialect, and their lowerings to NVVM, ROCDL, and SPIR-V. There is currently partial support for gpu.shuffle lowered to NVVM.
+
+The aim is to ensure the tool is extensible, at first within the gpu dialect, and ideally to other dialects in MLIR. 
+
+Requirements:
+  - LLVM 23.1.3
+  - Z3
+  - CMake 3.31 (or newer)
+  - Ninja, clang, lld
+
+Build:
+  PATH=$LLVM/bin:$PATH cmake -G Ninja -S . -B build \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
+  -DMLIR_DIR=$LLVM/lib/cmake/mlir -DLLVM_USE_LINKER=lld
+  ninja -C build
+
+  With $LLVM set to the directory the LLVM release is unpacked in.
+
+More documentation will follow.
