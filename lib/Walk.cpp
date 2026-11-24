@@ -38,7 +38,7 @@ private:
 
   /// Starts a line of pseudocode, indented to sit under its function's
   /// heading, and returns the stream for the rest of the line
-  raw_ostream &startLine() { return os.indent(4); }
+  raw_ostream &startLine() { return os.indent(2); }
 
   /// Returns the id of an SSA value registered earlier in the walk
   std::string idOf(Value value);
