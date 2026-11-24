@@ -23,3 +23,4 @@ find_package(Z3 CONFIG REQUIRED)
 
 add_subdirectory(lib)
 add_subdirectory(tools/eidolon)
+add_subdirectory(tests)
