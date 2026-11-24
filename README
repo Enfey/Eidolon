@@ -6,18 +6,29 @@ As a proof of concept, Eidolon aims to support the warp-collective operations in
 
 The aim is to ensure the tool is extensible, at first within the gpu dialect, and ideally to other dialects in MLIR. 
 
-Requirements:
-  - LLVM 23.1.3
-  - Z3
-  - CMake 3.31 (or newer)
-  - Ninja, clang, lld
 
-Build:
+Build and test w/ Nix (recommended):
+  Requires Nix with flakes enabled. x86-64 Linux, AArch64 Linux and Silicon Mac are supported.
+
+  nix develop
+  cmake -G Ninja -S . -B build -DCMAKE_BUILD_TYPE=Release -DLLVM_USE_LINKER=lld
+  ninja -C build eidolon
+  ninja -C build eidolon-tests
+
+Build without nix:
+  Requirements:
+    - LLVM 23.1.3
+    - Z3
+    - CMake 3.31 (or newer)
+    - Ninja, clang, lld
+    - lit and FileCheck
+
   PATH=$LLVM/bin:$PATH cmake -G Ninja -S . -B build \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
   -DMLIR_DIR=$LLVM/lib/cmake/mlir -DLLVM_USE_LINKER=lld
-  ninja -C build
+  ninja -C build eidolon
+  ninja -C build eidolon-tests
 
   With $LLVM set to the directory the LLVM release is unpacked in.
 

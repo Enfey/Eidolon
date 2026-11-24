@@ -21,6 +21,10 @@ include_directories(${PROJECT_SOURCE_DIR}/include)
 
 find_package(Z3 CONFIG REQUIRED)
 
+if (DEFINED ENV{IN_NIX_SHELL})
+  set(CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES "")
+endif()
+
 add_subdirectory(lib)
 add_subdirectory(tools/eidolon)
 add_subdirectory(tests)
