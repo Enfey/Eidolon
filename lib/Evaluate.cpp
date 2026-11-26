@@ -44,12 +44,12 @@ static FailureOr<SmallVector<Type>> scalarTypesOf(Type type) {
 
 namespace {
 /// Evaluates one function on the active lanes of a warp. SSA values are denoted
-/// as one WarpValue. An evaluator lives for one function.
+/// as one WarpValue. Evaluators are instantiated and destroyed for each
+/// function.
 class FunctionEvaluator {
 public:
   FunctionEvaluator(const BitVector &activeLanes, z3::context &context)
-      : activeLanes(activeLanes), context(context),
-        undefinedBehaviour(context.bool_val(false)) {};
+      : activeLanes(activeLanes), context(context) {};
 
   FailureOr<Evaluation> evaluate(FunctionOpInterface function,
                                  ArrayRef<WarpValue> arguments);
@@ -97,17 +97,26 @@ private:
   /// term. Reading a lane that is not active yields an undefined value.
   LaneValue readLane(const WarpValue &value, const z3::expr &lane);
 
+  /// Records a cause of undefined behaviour for the function where `condition`
+  /// holds. `label` denotes the cause and `location` denotes the source
+  /// location.
+  void addUndefinedBehaviour(StringRef label, Location location,
+                             const z3::expr &condition);
+
+  /// TODO: Comment this
   void applyLaneOp(Operation *op, LaneSemantics semantics);
 
+  /// TODO: Comment this
   LogicalResult defineConstant(Operation *op, Attribute constant);
 
+  /// TODO: Comment this
   LogicalResult evaluateOp(Operation *op);
 
   const BitVector &activeLanes;
   z3::context &context;
   DenseMap<Value, SSAScalars> values;
   SmallVector<WarpValue> results;
-  z3::expr undefinedBehaviour;
+  SmallVector<UndefinedBehaviour> undefinedBehaviours;
   unsigned undefinedCount = 0;
 };
 } // namespace
@@ -158,6 +167,18 @@ LaneValue FunctionEvaluator::readLane(const WarpValue &value,
               z3::ite(isSourceLane, value[sourceLane]->poison, result.poison)};
   }
   return result;
+}
+
+void FunctionEvaluator::addUndefinedBehaviour(StringRef label,
+                                              Location location,
+                                              const z3::expr &condition) {
+  for (UndefinedBehaviour &known : undefinedBehaviours) {
+    if (known.label == label && known.location == location) {
+      known.condition = known.condition || condition;
+      return;
+    }
+  }
+  undefinedBehaviours.push_back({label.str(), location, condition});
 }
 
 void FunctionEvaluator::applyLaneOp(Operation *op, LaneSemantics semantics) {
@@ -243,9 +264,11 @@ LogicalResult FunctionEvaluator::evaluateOp(Operation *op) {
           valid[lane] = LaneValue{
               z3::ite(inRange, context.bv_val(1, 1), context.bv_val(0, 1)),
               operandPoison};
-          // o > w is defined as UB - we do not know what that lane will contain
-          undefinedBehaviour =
-              undefinedBehaviour || z3::uge(laneOffset, warpSize());
+          // o >= w is defined as UB - we do not know what that lane will
+          // contain when read
+          addUndefinedBehaviour(
+              "a gpu.shuffle offset is at or above the warp size",
+              shuffle.getLoc(), z3::uge(laneOffset, warpSize()));
         }
         define(shuffle.getShuffleResult(), {result});
         define(shuffle.getValid(), {valid});
@@ -339,15 +362,24 @@ LogicalResult FunctionEvaluator::evaluateOp(Operation *op) {
           // mask that never runs it, is UB. Similarly, reading a lane outside
           // the mask gives an undefined result.
           z3::expr laneMask = mask[lane]->bits;
-          undefinedBehaviour =
-              undefinedBehaviour || laneMask.extract(lane, lane) ==
-                                        0; // Is executing, where the mask says
-                                           // the lane should not be taking part
+          // Is executing, where the mask says the lane should not be taking
+          // part
+          addUndefinedBehaviour(
+              "a lane outside the member mask runs nvvm.shfl.sync",
+              shuffle->getLoc(), laneMask.extract(lane, lane) == 0);
+          // This may perhaps be overly defensive; the PTX membermask is
+          // constructed according to width as the participating lanes are the
+          // first lanes declared by width in the source MLIR. As such they will
+          // never not be congruent providing the in-tree lowering computes the
+          // mask correctly.
           if (inactiveBits != 0)
-            undefinedBehaviour =
-                undefinedBehaviour ||
-                (laneMask & context.bv_val(inactiveBits, 32)) != 0;
-          z3::expr inMask = z3::lshr(laneMask, from).extract(0, 0) == 1; // Valid read, lane is participating
+            addUndefinedBehaviour(
+                "the member mask of nvvm.shfl.sync names a lane that does not "
+                "run the shuffle",
+                shuffle->getLoc(),
+                (laneMask & context.bv_val(inactiveBits, 32)) != 0);
+          // Valid read, lane is participating
+          z3::expr inMask = z3::lshr(laneMask, from).extract(0, 0) == 1;
           LaneValue read = readLane(shuffled, from);
           z3::expr operandPoison =
               mask[lane]->poison || offset[lane]->poison || clamp[lane]->poison;
@@ -423,7 +455,7 @@ FunctionEvaluator::evaluate(FunctionOpInterface function,
   for (Operation &op : block)
     if (failed(evaluateOp(&op)))
       return failure();
-  return Evaluation{std::move(results), undefinedBehaviour};
+  return Evaluation{std::move(results), std::move(undefinedBehaviours)};
 }
 
 FailureOr<Evaluation> eidolon::evaluateFunction(FunctionOpInterface function,

@@ -9,10 +9,12 @@
 #pragma once
 
 #include "eidolon/Z3.h"
+#include "mlir/IR/Location.h"
 #include "mlir/Interfaces/FunctionInterfaces.h"
 #include "mlir/Support/LLVM.h"
 #include "llvm/ADT/SmallVector.h"
 #include <optional>
+#include <string>
 
 namespace mlir::eidolon {
 struct LaneValue {
@@ -25,11 +27,22 @@ struct LaneValue {
 /// function e.g., diverges, the LaneValue is empty.
 using WarpValue = SmallVector<std::optional<LaneValue>>;
 
+/// Captures a single cause of undefined behaviour at one source location,
+/// with a label and condition that holds for the exact inputs under which
+/// UB occurs.
+struct UndefinedBehaviour {
+  std::string label;
+  Location location;
+  z3::expr condition;
+};
+
 struct Evaluation {
   /// Holds returned scalars, in order, representing the values of the lanes at
   /// all points of execution in the warp.
   SmallVector<WarpValue> results;
-  z3::expr undefinedBehaviour;
+  /// Holds `UndefinedBehaviour` structs recorded by the evaluator, that
+  /// correspond to source locations at which the UB occurs. Empty otherwise.
+  SmallVector<UndefinedBehaviour> undefinedBehaviours;
 };
 
 /// Evaluates `function` on a warp with one lane per bit of `activeLanes`, in
