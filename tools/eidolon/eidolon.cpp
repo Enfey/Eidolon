@@ -8,6 +8,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "eidolon/Lowering.h"
+#include "eidolon/Refinement.h"
 #include "eidolon/Walk.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/GPU/IR/GPUDialect.h"
@@ -28,12 +29,40 @@ using namespace llvm;
 using namespace mlir;
 
 static cl::opt<std::string>
-    inputFilename(cl::Positional, // Would expect a flag otherwise
-                  cl::desc("<input file>"), cl::Required);
+  inputFilename(cl::Positional, // Would expect a flag otherwise
+                cl::desc("<input file>"), cl::Required);
+
+static cl::opt<bool> printLowered("print-lowered",
+                                  cl::desc("Prints the lowered module instead of walking it"));
 
 static cl::opt<bool>
-    printLowered("print-lowered",
-                 cl::desc("Prints the lowered module instead of walking it"));
+    printWalk("print-walk", cl::desc("Prints source and target function pairs "
+                                     "as pseudocode and does not validate"));
+
+/// Prints `source` and `target` labels and then checks that `target` refines
+/// source according to `eidlon::checkRefinement`. If --print-walk was passed
+/// then the pseudocode is sent to `outs()`. Returns whether the pair 'passes'
+/// i.e., the `target` refines the `source` and whether the walk failed or
+/// succeeded should the flag be passed.
+static FailureOr<bool> processPair(FunctionOpInterface source,
+                                   FunctionOpInterface target,
+                                   const eidolon::RefinementConfig &config) {
+  outs() << "@" << source.getName() << "\n";
+  if (printWalk) {
+    outs() << "  source\n";
+    if (failed(eidolon::walkFunction(source, outs())))
+      return failure();
+    outs() << "  target\n";
+    if (failed(eidolon::walkFunction(target, outs())))
+      return failure();
+    return true;
+  }
+  FailureOr<eidolon::Verdict> verdict =
+      eidolon::checkRefinement(source, target, config, outs());
+  if (failed(verdict))
+    return failure();
+  return *verdict == eidolon::Verdict::Refines;
+}
 
 static LogicalResult eidolonExec(MLIRContext &context) {
   SourceMgr sourceMgr;
@@ -59,7 +88,9 @@ static LogicalResult eidolonExec(MLIRContext &context) {
 
   // Pair each func.func in the source with the llvm.func it was lowered to and
   // walk both
+  eidolon::RefinementConfig config;
   unsigned pairsWalked = 0;
+  bool allRefine = true;
   for (gpu::GPUModuleOp sourceGpuModule : source->getOps<gpu::GPUModuleOp>()) {
     for (func::FuncOp sourceFunction : sourceGpuModule.getOps<func::FuncOp>()) {
       // Construct hierarchical symbol name for the `FuncOp`, e.g.,
@@ -73,13 +104,13 @@ static LogicalResult eidolonExec(MLIRContext &context) {
         return emitError(sourceFunction.getLoc())
                << "no llvm.func named " << fullName << " after lowering";
       }
-      outs() << "@" << sourceFunction.getName() << "\n  source\n";
-      if (failed(eidolon::walkFunction(sourceFunction, outs())))
-        return failure();
-      outs() << "  target\n";
-      if (failed(eidolon::walkFunction(targetFunction, outs())))
-        return failure();
       ++pairsWalked;
+      FailureOr<bool> passes =
+          processPair(sourceFunction, targetFunction, config);
+      if (failed(passes))
+        return failure();
+      if (!*passes)
+        allRefine = false;
     }
   }
 
@@ -87,7 +118,7 @@ static LogicalResult eidolonExec(MLIRContext &context) {
   if (pairsWalked == 0)
     return emitError(source->getLoc(),
                      "nothing to check: no func.func inside a gpu.module");
-  return success();
+  return success(allRefine);
 }
 
 int main(int argc, char **argv) {
