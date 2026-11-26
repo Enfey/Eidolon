@@ -2,6 +2,7 @@ add_mlir_library(EidolonLib
   Lowering.cpp
   Walk.cpp
   Evaluate.cpp
+  Refinement.cpp
 
   LINK_LIBS PUBLIC
   MLIRArithDialect
