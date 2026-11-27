@@ -5,7 +5,13 @@ gpu.module @shuffles {
   // CHECK-LABEL: @shuffle_up_w_23_vo_arg
   // CHECK-NEXT:  on lanes 0-22: the target does not refine the source
   // CHECK-NEXT:  result 0 (f32) can differ on lanes 1-22
+  // CHECK-NEXT:  example for lane 1 (first recorded difference):
+  // CHECK-NEXT:  argument 0 (f32) {{.*}}
+  // CHECK-NEXT:  argument 1 (i32) {{.*}}
+  // CHECK-NEXT:  source {{.*}}
+  // CHECK-NEXT:  target {{.*}}
   // CHECK-NEXT:  result 1 (i1) can differ on lanes 0-22
+  // CHECK-NEXT:  example for lane 0 (first recorded difference):
   func.func @shuffle_up_w_23_vo_arg(%x: f32, %offset: i32) -> (f32, i1) {
     %width = arith.constant 23 : i32
     %result, %valid = gpu.shuffle up %x, %offset, %width : f32
@@ -29,7 +35,13 @@ gpu.module @shuffles {
   // CHECK-LABEL: @shuffle_up_w_16_vo_arg
   // CHECK-NEXT:  on lanes 0-15: the target does not refine the source
   // CHECK-NEXT:  result 0 (f32) can differ on lanes 1-15
+  // CHECK-NEXT:  example for lane 1 (first recorded difference):
+  // CHECK-NEXT:  argument 0 (f32) {{.*}}
+  // CHECK-NEXT:  argument 1 (i32) {{.*}}
+  // CHECK-NEXT:  source {{.*}}
+  // CHECK-NEXT:  target {{.*}}
   // CHECK-NEXT:  result 1 (i1) can differ on lanes 0-15
+  // CHECK-NEXT:  example for lane 0 (first recorded difference):
   func.func @shuffle_up_w_16_vo_arg(%x: f32, %offset: i32) -> (f32, i1) {
     %width = arith.constant 16 : i32
     %result, %valid = gpu.shuffle up %x, %offset, %width : f32

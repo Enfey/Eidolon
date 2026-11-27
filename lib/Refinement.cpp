@@ -121,6 +121,108 @@ static void printLocation(raw_ostream &os, Location location) {
     os << location;
 }
 
+/// Prints `laneValue` of Type `type`. Prints poison where `laneValue` is indeed
+/// poison , the number/value, or "?" where Z3 cannot reduce `laneValue` to a
+/// number.
+static void printLaneValue(raw_ostream &os, const LaneValue &laneValue,
+                           Type type) {
+  z3::expr poison = laneValue.poison.simplify();
+  z3::expr bits = laneValue.bits.simplify();
+  if (poison.is_true()) {
+    os << "poison";
+    return;
+  }
+  if (!poison.is_false() || !bits.is_numeral()) {
+    os << "?";
+    return;
+  }
+  unsigned bitWidth = type.getIntOrFloatBitWidth();
+  APInt number(bitWidth, bits.get_numeral_uint64());
+  // f16, f32, f64 (notably not higher than this due to `get_numeral_uint64()`
+  // though this could be future work)
+  if (auto floatType = dyn_cast<FloatType>(type))
+    os << llvm::format(
+        "%g", APFloat(floatType.getFloatSemantics(), number).convertToDouble());
+  // i1
+  else if (bitWidth == 1)
+    os << (number.isOne() ? "true" : "false");
+  // i16, i32, i64 (stops for same reason as above)
+  else
+    os << number.getSExtValue();
+}
+
+// Prints `warpValue` alongside the range of active lanes to within which
+// `warpValue` is uniform e.g., "lanes 0-9: poison; lanes 9-30: 1"
+static void printWarpValue(raw_ostream &os, const WarpValue &warpValue,
+                           Type type) {
+  SmallVector<std::string> texts;
+  for (const std::optional<LaneValue> &laneValue : warpValue) {
+    if (laneValue) {
+      std::string text;
+      llvm::raw_string_ostream stream(text);
+      printLaneValue(stream, *laneValue, type);
+      texts.push_back(text);
+    }
+  }
+  bool firstRun = true;
+  for (unsigned int first = 0; first < texts.size(); ++first) {
+    unsigned last = first;
+    // Where the index is in range, and the set of texts is uniform, increment
+    // the index
+    while (last + 1 < texts.size() && texts[last + 1] == texts[first])
+      ++last;
+    if (!firstRun)
+      os << "; ";
+    printLaneRange(os, first, last);
+    os << ": " << texts[first];
+    firstRun = false;
+    first = last;
+  }
+}
+
+/// Returns a `WarpValue` whose `LaneValue`s are computed from the incoming
+/// `warpValue` whose `laneValue`s are Z3 formulas, possibly over the unknowns
+/// (see symbolicArguments()).
+static WarpValue concretise(const z3::model &example,
+                            const WarpValue &warpValue) {
+  WarpValue result(warpValue.size());
+  for (unsigned lane = 0; lane < warpValue.size(); ++lane)
+    if (warpValue[lane])
+      result[lane] = LaneValue{
+          // `model_completion` ensures a fixed default (0 for BV, false for
+          // bool)
+          // is picked if the model does not denote `poison` or `bits` so we
+          // always have a concrete WarpValue to return.
+          example.eval(warpValue[lane]->bits, /*model_completion=*/true),
+          example.eval(warpValue[lane]->poison, /*model_completion=*/true)};
+  return result;
+}
+
+/// Print a concretised `warpValue` via delegation to `concretise()` and
+/// `printWarpValue` with some additional output formatting (i.e., labelling the
+/// warp value given `label`).
+static void printInstance(raw_ostream &os, StringRef label,
+                          const WarpValue &warpValue, Type type,
+                          const z3::model &example) {
+  os << "     " << label << "  ";
+  printWarpValue(os, concretise(example, warpValue), type);
+  os << "\n";
+}
+
+/// Print the set of `arguments` (whose `WarpValue`s contain unknowns) with
+/// respect to `function` via delegation to `printInstance`.
+static void printArguments(raw_ostream &os, FunctionOpInterface function,
+                           ArrayRef<WarpValue> arguments,
+                           const z3::model &example) {
+  ArrayRef<Type> types = function.getArgumentTypes();
+  for (unsigned idx = 0; idx < types.size(); ++idx) {
+    std::string label;
+    llvm::raw_string_ostream(label)
+        << "argument " << idx << " (" << types[idx] << ")";
+    printInstance(os, label, arguments[idx], types[idx], example);
+  }
+}
+
 /// Returns symbolic inputs for the arguments of `function`. Yields Z3
 /// bitvectors for each argument for each lane, which may be set to any bits, as
 /// "argI_laneK" where k is an active lane and i is the argument index with
@@ -222,11 +324,16 @@ FailureOr<Verdict> eidolon::checkRefinement(FunctionOpInterface source,
   // a counterexample showing the lowering induced UB for valid source inputs.
   for (const UndefinedBehaviour &behaviour :
        targetEvaluation.undefinedBehaviours) {
-    if (query(solver, behaviour.condition, undecided)) {
+    if (std::optional<z3::model> example =
+            query(solver, behaviour.condition, undecided)) {
       findingsStream << "  the target can have undefined behaviour: "
                      << behaviour.label << "\n    at ";
       printLocation(findingsStream, behaviour.location);
       findingsStream << "\n";
+      if (source.getNumArguments() != 0) {
+        findingsStream << "    example:\n";
+        printArguments(findingsStream, source, *arguments, *example);
+      }
     }
   }
 
@@ -234,20 +341,32 @@ FailureOr<Verdict> eidolon::checkRefinement(FunctionOpInterface source,
   // the solver with, for each of the resultant `WarpValue`s of the target and
   // source
   ArrayRef<Type> types = source.getResultTypes();
-  for (unsigned index = 0; index < types.size(); ++index) {
+  for (unsigned idx = 0; idx < types.size(); ++idx) {
     BitVector differs(config.warpSize);
+    // Example of the first lane that can differ for this result
+    std::optional<z3::model> firstExample;
     for (unsigned lane : activeLanes->set_bits())
-      if (query(solver,
-                lanePred(*sourceEvaluation.results[index][lane],
-                         *targetEvaluation.results[index][lane]),
-                undecided))
+      if (std::optional<z3::model> example =
+              query(solver,
+                    lanePred(*sourceEvaluation.results[idx][lane],
+                             *targetEvaluation.results[idx][lane]),
+                    undecided)) {
+        if (differs.none())
+          firstExample = example;
         differs.set(lane);
+      }
     if (differs.none())
       continue;
-    findingsStream << "  result " << index << " (" << types[index]
+    findingsStream << "  result " << idx << " (" << types[idx]
                    << ") can differ on ";
     printSetLanes(findingsStream, differs);
-    findingsStream << "\n";
+    findingsStream << "\n    example for lane " << differs.find_first()
+                   << " (first recorded difference)" << ":\n";
+    printArguments(findingsStream, source, *arguments, *firstExample);
+    printInstance(findingsStream, "source", sourceEvaluation.results[idx],
+                  types[idx], *firstExample);
+    printInstance(findingsStream, "target", targetEvaluation.results[idx],
+                  types[idx], *firstExample);
   }
 
   Verdict verdict = Verdict::Refines;
