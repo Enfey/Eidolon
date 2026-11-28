@@ -15,10 +15,13 @@ gpu.module @shuffles {
   // not exceed `clamp`, and thus reads are invalid.  As such, the result for
   // these values differs across these lanes, and so the target does not refine
   // the source. I can only assume that the lowering to the clamp in in-tree
-  // MLIR is incorrect. I shall prove this with a more general test.
+  // MLIR is incorrect. Note the lack of argument lines amongst other differences.
   // CHECK-LABEL: @shuffle
   // CHECK-NEXT:  on lanes 0-22: the target does not refine the source
   // CHECK-NEXT:  result 5 (i1) can differ on lanes 4-12
+  // CHECK-NEXT:  example for lane 4 (first recorded difference):
+  // CHECK-NEXT:  source  lanes 0-3: false; lanes 4-22: true
+  // CHECK-NEXT:  target  lanes 0-12: false; lanes 13-22: true
 
   // WALK-LABEL: @shuffle
   // WALK-NEXT:  source
