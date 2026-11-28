@@ -21,7 +21,7 @@ include_directories(${PROJECT_SOURCE_DIR}/include)
 
 find_package(Z3 CONFIG REQUIRED)
 
-if (DEFINED ENV{IN_NIX_SHELL})
+if (CMAKE_CXX_COMPILER MATCHES "^/nix/store/")
   set(CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES "")
 endif()
 
