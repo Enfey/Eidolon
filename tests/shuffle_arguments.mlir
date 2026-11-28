@@ -1,5 +1,6 @@
 // RUN: not eidolon %s | FileCheck %s
 // RUN: not eidolon %s 2>&1 | FileCheck %s --check-prefix=ERROR
+// RUN: not eidolon --solver-timeout=1 %s | FileCheck %s --check-prefix=TIMEOUT
 
 gpu.module @shuffles {
   // CHECK-LABEL: @shuffle_up_w_23_vo_arg
@@ -12,6 +13,9 @@ gpu.module @shuffles {
   // CHECK-NEXT:  target {{.*}}
   // CHECK-NEXT:  result 1 (i1) can differ on lanes 0-22
   // CHECK-NEXT:  example for lane 0 (first recorded difference):
+
+  // TIMEOUT-LABEL: @shuffle_down_w_23_vo_arg
+  // TIMEOUT-NEXT:  on lanes 0-22: unknown: solver gave up
   func.func @shuffle_up_w_23_vo_arg(%x: f32, %offset: i32) -> (f32, i1) {
     %width = arith.constant 23 : i32
     %result, %valid = gpu.shuffle up %x, %offset, %width : f32

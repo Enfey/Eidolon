@@ -15,6 +15,9 @@ namespace mlir::eidolon {
 struct RefinementConfig {
   /// The number of lanes in a warp
   unsigned warpSize = 32;
+  // The time the solver may spend finding an example for a given condition, in
+  // milliseconds. Zero (default) means there is no limit.
+  unsigned solverTimeoutMs = 0;
 };
 
 /// The outcome of a single refinement check

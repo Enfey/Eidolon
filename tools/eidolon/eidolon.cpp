@@ -39,6 +39,12 @@ static cl::opt<bool>
     printWalk("print-walk", cl::desc("Prints source and target function pairs "
                                      "as pseudocode and does not validate"));
 
+static cl::opt<unsigned>
+    solverTimeout("solver-timeout",
+                  cl::desc("Limits the time the solver spends to solve a "
+                           "particular condition (infinite by default)."),
+                  cl::value_desc("milliseconds"), cl::init(0));
+
 /// Prints `source` and `target` labels and then checks that `target` refines
 /// source according to `eidlon::checkRefinement`. If --print-walk was passed
 /// then the pseudocode is sent to `outs()`. Returns whether the pair 'passes'
@@ -89,6 +95,7 @@ static LogicalResult eidolonExec(MLIRContext &context) {
   // Pair each func.func in the source with the llvm.func it was lowered to and
   // walk both
   eidolon::RefinementConfig config;
+  config.solverTimeoutMs = solverTimeout;
   unsigned pairsWalked = 0;
   bool allRefine = true;
   for (gpu::GPUModuleOp sourceGpuModule : source->getOps<gpu::GPUModuleOp>()) {

@@ -290,9 +290,12 @@ FailureOr<Verdict> eidolon::checkRefinement(FunctionOpInterface source,
   Evaluation &sourceEvaluation = evaluations->first;
   Evaluation &targetEvaluation = evaluations->second;
 
+  z3::solver solver(context);
+  if (config.solverTimeoutMs != 0)
+    solver.set("timeout", config.solverTimeoutMs);
+
   // Ideally the inverse of the UB conditions hold, as such we assume the source
   // is defined
-  z3::solver solver(context);
   for (const UndefinedBehaviour &behaviour :
        sourceEvaluation.undefinedBehaviours)
     solver.add(!behaviour.condition);
